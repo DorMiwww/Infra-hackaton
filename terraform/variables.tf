@@ -103,3 +103,44 @@ variable "namespaces" {
   type        = list(string)
   default     = ["staging", "production"]
 }
+
+# ───────────────────────────────────────────
+# Monitoring (Prometheus + Grafana)
+# ───────────────────────────────────────────
+
+variable "kube_prometheus_stack_version" {
+  description = "Helm chart version for kube-prometheus-stack"
+  type        = string
+  default     = "72.6.2"
+}
+
+variable "grafana_admin_user" {
+  description = "Grafana admin username"
+  type        = string
+  default     = "admin"
+}
+
+variable "grafana_admin_password" {
+  description = "Grafana admin password"
+  type        = string
+  default     = "admin"
+  sensitive   = true
+}
+
+variable "grafana_service_type" {
+  description = "Kubernetes Service type for Grafana (LoadBalancer for external access, ClusterIP for port-forward)"
+  type        = string
+  default     = "LoadBalancer"
+}
+
+variable "prometheus_retention" {
+  description = "How long Prometheus keeps metrics data"
+  type        = string
+  default     = "7d"
+}
+
+variable "prometheus_storage_size" {
+  description = "Persistent volume size for Prometheus data"
+  type        = string
+  default     = "10Gi"
+}
