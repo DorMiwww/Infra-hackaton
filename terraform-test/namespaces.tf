@@ -8,10 +8,14 @@ provider "kubernetes" {
   }
 }
 
-resource "kubernetes_namespace" "staging" {
-  metadata { name = "staging" }
-}
+resource "kubernetes_namespace" "this" {
+  for_each = toset(var.namespaces)
 
-resource "kubernetes_namespace" "production" {
-  metadata { name = "production" }
+  metadata {
+    name = each.value
+    labels = {
+      environment = each.value
+      managed-by  = "terraform"
+    }
+  }
 }

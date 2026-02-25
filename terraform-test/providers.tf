@@ -1,19 +1,25 @@
 terraform {
   required_providers {
-    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+    aws        = { source = "hashicorp/aws", version = "~> 5.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.0" }
   }
+  # Note: backend config does not support variables
   backend "s3" {
-    bucket         = "nero-terraform-state78301" # Назва вашого бакета
-    key            = "eks/terraform.tfstate"    # Шлях до файлу всередині бакета
-    region         = "eu-central-1"
-    #dynamodb_table = "terraform-state-locking"  # Назва таблиці DynamoDB
-    encrypt        = true
+    bucket  = "nero-terraform-state78301"
+    key     = "eks/terraform.tfstate"
+    region  = "eu-central-1"
+    encrypt = true
   }
 }
 
-
-
 provider "aws" {
-  region = "eu-central-1" # Оберіть найближчий до вас регіон
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
 }
