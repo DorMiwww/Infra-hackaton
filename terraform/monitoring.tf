@@ -33,10 +33,41 @@ resource "helm_release" "kube_prometheus_stack" {
     value = var.grafana_service_type
   }
 
+  # Datasource — явно вказуємо Prometheus URL
+  set {
+    name  = "grafana.additionalDataSources[0].name"
+    value = "Prometheus"
+  }
+
+  set {
+    name  = "grafana.additionalDataSources[0].type"
+    value = "prometheus"
+  }
+
+  set {
+    name  = "grafana.additionalDataSources[0].url"
+    value = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+  }
+
+  set {
+    name  = "grafana.additionalDataSources[0].access"
+    value = "proxy"
+  }
+
+  set {
+    name  = "grafana.additionalDataSources[0].isDefault"
+    value = "true"
+  }
+
   # --- Prometheus ---
   set {
     name  = "prometheus.prometheusSpec.retention"
     value = var.prometheus_retention
+  }
+
+  set {
+    name  = "prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName"
+    value = "gp3"
   }
 
   set {
@@ -66,5 +97,5 @@ resource "helm_release" "kube_prometheus_stack" {
     value = "true"
   }
 
-  depends_on = [module.eks]
+  depends_on = [module.eks, kubernetes_storage_class.gp3]
 }
