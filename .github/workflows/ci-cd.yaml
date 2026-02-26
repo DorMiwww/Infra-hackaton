@@ -24,6 +24,13 @@ on:
           - recommendationservice
           - shippingservice
           - loadgenerator
+      environment:
+        description: 'Deploy environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
 
 env:
   REGISTRY: ghcr.io
@@ -35,6 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.detect.outputs.services }}
+      namespace: ${{ steps.env.outputs.namespace }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +78,15 @@ jobs:
           JSON=$(echo "$SERVICES" | tr ' ' '\n' | jq -R . | jq -sc .)
           echo "services=$JSON" >> $GITHUB_OUTPUT
           echo "Services to build: $SERVICES"
+
+      - name: Set environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "namespace=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "namespace=staging" >> $GITHUB_OUTPUT
+          fi
 
   # ── Build & push to GHCR ──
   build:
@@ -121,7 +138,7 @@ jobs:
 
   # ── Update values.yaml, commit & deploy ──
   deploy:
-    name: Deploy to EKS
+    name: Deploy to ${{ needs.changes.outputs.namespace }}
     needs: [changes, build]
     if: needs.changes.outputs.services != '[]'
     runs-on: ubuntu-latest
@@ -175,15 +192,19 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Deploy to EKS
+        env:
+          NAMESPACE: ${{ needs.changes.outputs.namespace }}
         run: |
           aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
           helm upgrade --install online-boutique ./helm-chart \
-            --namespace production \
+            --namespace $NAMESPACE \
             --create-namespace \
             --wait \
             --timeout 10m
 
       - name: Verify
+        env:
+          NAMESPACE: ${{ needs.changes.outputs.namespace }}
         run: |
-          kubectl get pods -n production
-          kubectl get svc -n production
+          kubectl get pods -n $NAMESPACE
+          kubectl get svc -n $NAMESPACE
