@@ -34,7 +34,7 @@ securityContext:
 adService:
   create: true
   name: adservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 200m
@@ -45,7 +45,7 @@ adService:
 cartService:
   create: true
   name: cartservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 200m
@@ -56,7 +56,7 @@ cartService:
 checkoutService:
   create: true
   name: checkoutservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 100m
@@ -67,7 +67,7 @@ checkoutService:
 currencyService:
   create: true
   name: currencyservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 100m
@@ -78,7 +78,7 @@ currencyService:
 emailService:
   create: true
   name: emailservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 100m
@@ -89,7 +89,7 @@ emailService:
 frontend:
   create: true
   name: frontend
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   externalService: true
   cymbalBranding: false
   # One of: local, gcp, aws, azure, onprem, alibaba. When not set, defaults to "local" unless running in GKE, otherwise auto-sets to gcp.
@@ -114,7 +114,7 @@ frontend:
 loadGenerator:
   create: true
   name: loadgenerator
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   checkFrontendInitContainer: true
   resources:
     requests:
@@ -126,7 +126,7 @@ loadGenerator:
 paymentService:
   create: true
   name: paymentservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 100m
@@ -137,7 +137,7 @@ paymentService:
 productCatalogService:
   create: true
   name: productcatalogservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   # Specifies an extra latency to any request on productcatalogservice, by default no extra latency.
   extraLatency: ""
   resources:
@@ -150,7 +150,7 @@ productCatalogService:
 recommendationService:
   create: true
   name: recommendationservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 100m
@@ -161,7 +161,7 @@ recommendationService:
 shippingService:
   create: true
   name: shippingservice
-  tag: "5a236e143424e35f27260fd7bc39ecc496e8faa1"
+  tag: "2f30f259513d1f016b216035ae5db3a1c0bb0cc2"
   resources:
     requests:
       cpu: 100m
