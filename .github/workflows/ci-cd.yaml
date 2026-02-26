@@ -1,53 +1,18 @@
-# =============================================================================
-# CI/CD Pipeline для мікросервісів Online Boutique (AWS EKS + ECR)
-# =============================================================================
-#
-# Що робить цей пайплайн:
-#   1. BUILD  — збирає Docker-образ мікросервісу
-#   2. PUSH   — пушить образ у Amazon ECR
-#   3. DEPLOY — оновлює маніфести та деплоїть у EKS кластер
-#
-# Передумови (GitHub Secrets які потрібно налаштувати):
-#   - AWS_ACCESS_KEY_ID       — Access Key від IAM User або використовуй OIDC
-#   - AWS_SECRET_ACCESS_KEY   — Secret Key від IAM User
-#   - AWS_REGION              — регіон (напр. eu-central-1)
-#   - AWS_ACCOUNT_ID          — 12-цифровий ID AWS акаунту
-#   - EKS_CLUSTER_NAME        — назва EKS кластера
-#
-# Для GHCR (GitHub Container Registry) — секрети не потрібні,
-# використовується вбудований GITHUB_TOKEN
-# =============================================================================
-
 name: CI/CD Pipeline
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ТРИГЕРИ (triggers) — коли запускається пайплайн
-# ─────────────────────────────────────────────────────────────────────────────
 on:
-  # При push у гілки main або develop
   push:
-    branches:
-      - main
-      - develop
-    # Запускати ТІЛЬКИ якщо змінились файли сервісів (не інфра)
-    # paths:
-    #   - 'src/**'
-    #   - 'Dockerfile'
+    branches: [main]
+    paths: ['code/**']
 
-  # При створенні Pull Request у main
-  pull_request:
-    branches:
-      - main
-
-  # Ручний запуск з GitHub UI (корисно для дебагу)
   workflow_dispatch:
     inputs:
-      service_name:
-        description: 'Назва мікросервісу для деплою'
+      service:
+        description: 'Service to build & deploy'
         required: true
-        default: 'frontend'
         type: choice
         options:
+          - all
           - frontend
           - cartservice
           - checkoutservice
@@ -58,280 +23,166 @@ on:
           - productcatalogservice
           - recommendationservice
           - shippingservice
-      environment:
-        description: 'Середовище для деплою'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
+          - loadgenerator
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ЗМІННІ СЕРЕДОВИЩА (доступні у всіх jobs)
-# ─────────────────────────────────────────────────────────────────────────────
 env:
-  # ---- AWS ----
-  AWS_REGION: ""             # напр. eu-central-1
-  AWS_ACCOUNT_ID: ""         # напр. 123456789012
-  EKS_CLUSTER_NAME: ""       # напр. online-boutique
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/online-boutique
 
-  # ---- Container Registry ----
-  # Варіант 1: Amazon ECR (рекомендовано для EKS — мінімальна latency при pull)
-  REGISTRY: ""               # буде встановлено як $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-  IMAGE_PREFIX: online-boutique   # префікс для ECR репозиторіїв
-
-  # Варіант 2: GitHub Container Registry (безкоштовно, простий старт)
-  # REGISTRY: ghcr.io
-  # IMAGE_PREFIX: ${{ github.repository_owner }}/online-boutique
-
-  # ---- Загальні ----
-  SERVICE_NAME: ${{ github.event.inputs.service_name || 'frontend' }}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# JOBS
-# ─────────────────────────────────────────────────────────────────────────────
 jobs:
-
-  # ===========================================================================
-  # JOB 1: BUILD & PUSH — збірка образу та пуш у реєстр
-  # ===========================================================================
-  build-and-push:
-    name: "Build & Push Docker Image"
+  # ── Detect which services changed ──
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
-    # Права для GHCR (якщо використовуєш ECR — цей блок не потрібен)
+      - name: Detect changed services
+        id: detect
+        run: |
+          ALL_SERVICES="adservice cartservice checkoutservice currencyservice emailservice frontend loadgenerator paymentservice productcatalogservice recommendationservice shippingservice"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ inputs.service }}" == "all" ]]; then
+              SERVICES="$ALL_SERVICES"
+            else
+              SERVICES="${{ inputs.service }}"
+            fi
+          else
+            SERVICES=""
+            for svc in $ALL_SERVICES; do
+              if git diff --name-only HEAD~1 HEAD -- "code/$svc/" | grep -q .; then
+                SERVICES="$SERVICES $svc"
+              fi
+            done
+            SERVICES=$(echo "$SERVICES" | xargs)
+          fi
+
+          if [ -z "$SERVICES" ]; then
+            echo "services=[]" >> $GITHUB_OUTPUT
+            echo "No services changed"
+            exit 0
+          fi
+
+          JSON=$(echo "$SERVICES" | tr ' ' '\n' | jq -R . | jq -sc .)
+          echo "services=$JSON" >> $GITHUB_OUTPUT
+          echo "Services to build: $SERVICES"
+
+  # ── Build & push to GHCR ──
+  build:
+    name: Build ${{ matrix.service }}
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      # Для OIDC автентифікації в AWS (замість access keys):
-      # id-token: write
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-      full_image: ${{ steps.build.outputs.image_uri }}
-
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.changes.outputs.services) }}
     steps:
-      # ── Крок 1: Checkout коду ──
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ── Крок 2: Налаштування Docker Buildx ──
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      # ── Крок 3: Автентифікація в AWS ──
-      # --- Варіант A: AWS Access Keys (простіше, менш безпечно) ---
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: docker/login-action@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || env.AWS_REGION }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- Варіант B: OIDC (рекомендовано — без довгоживучих ключів) ---
-      # Потрібно: 1) створити IAM OIDC Provider для GitHub
-      #           2) створити IAM Role з trust policy для GitHub
-      # - name: Configure AWS credentials (OIDC)
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-role
-      #     aws-region: ${{ secrets.AWS_REGION }}
-
-      # ── Крок 4: Логін у Amazon ECR ──
-      - name: Login to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      # ── Крок 5: Створити ECR репозиторій якщо не існує ──
-      - name: Ensure ECR repository exists
+      - name: Set build context
+        id: ctx
         run: |
-          aws ecr describe-repositories \
-            --repository-names "${{ env.IMAGE_PREFIX }}/${{ env.SERVICE_NAME }}" \
-            --region ${{ secrets.AWS_REGION || env.AWS_REGION }} 2>/dev/null || \
-          aws ecr create-repository \
-            --repository-name "${{ env.IMAGE_PREFIX }}/${{ env.SERVICE_NAME }}" \
-            --region ${{ secrets.AWS_REGION || env.AWS_REGION }} \
-            --image-scanning-configuration scanOnPush=true
+          SVC="${{ matrix.service }}"
+          if [[ "$SVC" == "cartservice" ]]; then
+            echo "context=code/cartservice/src" >> $GITHUB_OUTPUT
+            echo "dockerfile=code/cartservice/src/Dockerfile" >> $GITHUB_OUTPUT
+          else
+            echo "context=code/$SVC" >> $GITHUB_OUTPUT
+            echo "dockerfile=code/$SVC/Dockerfile" >> $GITHUB_OUTPUT
+          fi
 
-      # ── Крок 6: Генерація тегів ──
-      - name: Generate image metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - uses: docker/build-push-action@v6
         with:
-          images: ${{ steps.ecr-login.outputs.registry }}/${{ env.IMAGE_PREFIX }}/${{ env.SERVICE_NAME }}
+          context: ${{ steps.ctx.outputs.context }}
+          file: ${{ steps.ctx.outputs.dockerfile }}
+          push: true
           tags: |
-            # Тег за SHA комітом (завжди унікальний — основний для деплою)
-            type=sha,prefix=
-            # Тег latest для main гілки
-            type=raw,value=latest,enable={{is_default_branch}}
-            # Тег з назвою гілки
-            type=ref,event=branch
-            # Тег з номером PR
-            type=ref,event=pr
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
 
-      # ── Крок 7: Збірка та пуш образу ──
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          # Шлях до Dockerfile конкретного сервісу:
-          # file: ./src/${{ env.SERVICE_NAME }}/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}  # НЕ пушити на PR
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Кешування шарів для швидшої збірки
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # ── (Опціонально) Крок для GHCR замість ECR ──
-      # - name: Login to GHCR
-      #   uses: docker/login-action@v3
-      #   with:
-      #     registry: ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-
-  # ===========================================================================
-  # JOB 2: DEPLOY TO STAGING
-  # ===========================================================================
-  deploy-staging:
-    name: "Deploy to Staging"
-    needs: build-and-push
+  # ── Update values.yaml, commit & deploy ──
+  deploy:
+    name: Deploy to EKS
+    needs: [changes, build]
+    if: needs.changes.outputs.services != '[]'
     runs-on: ubuntu-latest
-    # Запускається тільки при push у main/develop (не на PR)
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-    environment:
-      name: staging
-      # url: https://staging.example.com
-
+    permissions:
+      contents: write
+      packages: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Автентифікація в AWS ──
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Update values.yaml
+        run: |
+          REPO="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}"
+          TAG="${{ github.sha }}"
+
+          yq -i ".images.repository = \"$REPO\"" helm-chart/values.yaml
+
+          declare -A KEY_MAP=(
+            [adservice]=adService
+            [cartservice]=cartService
+            [checkoutservice]=checkoutService
+            [currencyservice]=currencyService
+            [emailservice]=emailService
+            [frontend]=frontend
+            [loadgenerator]=loadGenerator
+            [paymentservice]=paymentService
+            [productcatalogservice]=productCatalogService
+            [recommendationservice]=recommendationService
+            [shippingservice]=shippingService
+          )
+
+          SERVICES='${{ needs.changes.outputs.services }}'
+          for svc in $(echo "$SERVICES" | jq -r '.[]'); do
+            key="${KEY_MAP[$svc]}"
+            [ -n "$key" ] && yq -i ".$key.tag = \"$TAG\"" helm-chart/values.yaml
+          done
+
+      - name: Commit updated values
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm-chart/values.yaml
+          git diff --cached --quiet || git commit -m "ci: update image tags [skip ci]"
+          git push
+
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      # ── Підключення до EKS кластера ──
-      - name: Update kubeconfig for EKS
+      - name: Deploy to EKS
         run: |
-          aws eks update-kubeconfig \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --region ${{ secrets.AWS_REGION || env.AWS_REGION }}
-
-      # ── Спосіб 1: Деплой через Helm (рекомендовано) ──
-      - name: Deploy with Helm
-        run: |
-          ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION || env.AWS_REGION }}.amazonaws.com"
-
-          helm upgrade --install online-boutique ./helm-chart \
-            --namespace staging \
-            --create-namespace \
-            --set images.repository=${ECR_REGISTRY}/${{ env.IMAGE_PREFIX }} \
-            --set images.tag=${{ needs.build-and-push.outputs.image_tag }} \
-            --wait \
-            --timeout 5m
-
-      # ── Спосіб 2: Деплой через Kustomize (альтернатива Helm) ──
-      # - name: Deploy with Kustomize
-      #   run: |
-      #     ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION || env.AWS_REGION }}.amazonaws.com"
-      #     cd kubernetes-manifests
-      #     kustomize edit set image \
-      #       ${{ env.SERVICE_NAME }}=${ECR_REGISTRY}/${{ env.IMAGE_PREFIX }}/${{ env.SERVICE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
-      #     kubectl apply -k . -n staging
-      #     kubectl rollout status deployment/${{ env.SERVICE_NAME }} -n staging --timeout=300s
-
-      # ── Спосіб 3: kubectl set image (найпростіший, без GitOps) ──
-      # - name: Deploy with kubectl
-      #   run: |
-      #     ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION || env.AWS_REGION }}.amazonaws.com"
-      #     kubectl set image deployment/${{ env.SERVICE_NAME }} \
-      #       server=${ECR_REGISTRY}/${{ env.IMAGE_PREFIX }}/${{ env.SERVICE_NAME }}:${{ needs.build-and-push.outputs.image_tag }} \
-      #       -n staging
-      #     kubectl rollout status deployment/${{ env.SERVICE_NAME }} -n staging --timeout=300s
-
-      # ── Перевірка деплою ──
-      - name: Verify deployment
-        run: |
-          echo "=== Pods ==="
-          kubectl get pods -n staging
-          echo "=== Services ==="
-          kubectl get svc -n staging
-          echo "=== Recent events ==="
-          kubectl get events -n staging --sort-by='.lastTimestamp' | tail -10
-
-  # ===========================================================================
-  # JOB 3: DEPLOY TO PRODUCTION (з manual approval)
-  # ===========================================================================
-  deploy-production:
-    name: "Deploy to Production"
-    needs: [build-and-push, deploy-staging]
-    runs-on: ubuntu-latest
-    # Тільки при push у main або ручному запуску з production
-    if: |
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
-    # environment з protection rules = manual approval в GitHub UI
-    environment:
-      name: production
-      # url: https://production.example.com
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION || env.AWS_REGION }}
-
-      - name: Update kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --region ${{ secrets.AWS_REGION || env.AWS_REGION }}
-
-      - name: Deploy with Helm
-        run: |
-          ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION || env.AWS_REGION }}.amazonaws.com"
-
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
           helm upgrade --install online-boutique ./helm-chart \
             --namespace production \
             --create-namespace \
-            --set images.repository=${ECR_REGISTRY}/${{ env.IMAGE_PREFIX }} \
-            --set images.tag=${{ needs.build-and-push.outputs.image_tag }} \
             --wait \
-            --timeout 5m
+            --timeout 10m
 
-      - name: Verify deployment
+      - name: Verify
         run: |
-          echo "=== Pods ==="
           kubectl get pods -n production
-          echo "=== Services ==="
           kubectl get svc -n production
-
-  # ===========================================================================
-  # JOB 4 (опціонально): NOTIFY — сповіщення про результат
-  # ===========================================================================
-  # notify:
-  #   name: "Send Notification"
-  #   needs: [deploy-staging]
-  #   runs-on: ubuntu-latest
-  #   if: always()
-  #   steps:
-  #     - name: Slack notification
-  #       uses: 8398a7/action-slack@v3
-  #       with:
-  #         status: ${{ job.status }}
-  #         channel: '#deployments'
-  #       env:
-  #         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

@@ -1,6 +1,5 @@
 images:
-  repository: us-central1-docker.pkg.dev/google-samples/microservices-demo
-  # Overrides the image tag whose default is the chart appVersion.
+  repository: ghcr.io/OWNER/online-boutique  # CI/CD will set this automatically
   tag: ""
 
 serviceAccounts:
@@ -44,6 +43,7 @@ securityContext:
 adService:
   create: true
   name: adservice
+  tag: ""
   resources:
     requests:
       cpu: 200m
@@ -55,6 +55,7 @@ adService:
 cartService:
   create: true
   name: cartservice
+  tag: ""
   resources:
     requests:
       cpu: 200m
@@ -66,6 +67,7 @@ cartService:
 checkoutService:
   create: true
   name: checkoutservice
+  tag: ""
   resources:
     requests:
       cpu: 100m
@@ -77,6 +79,7 @@ checkoutService:
 currencyService:
   create: true
   name: currencyservice
+  tag: ""
   resources:
     requests:
       cpu: 100m
@@ -88,6 +91,7 @@ currencyService:
 emailService:
   create: true
   name: emailservice
+  tag: ""
   resources:
     requests:
       cpu: 100m
@@ -99,6 +103,7 @@ emailService:
 frontend:
   create: true
   name: frontend
+  tag: ""
   externalService: true
   cymbalBranding: false
   # One of: local, gcp, aws, azure, onprem, alibaba. When not set, defaults to "local" unless running in GKE, otherwise auto-sets to gcp.
@@ -124,6 +129,7 @@ frontend:
 loadGenerator:
   create: true
   name: loadgenerator
+  tag: ""
   checkFrontendInitContainer: true
   resources:
     requests:
@@ -136,6 +142,7 @@ loadGenerator:
 paymentService:
   create: true
   name: paymentservice
+  tag: ""
   resources:
     requests:
       cpu: 100m
@@ -147,6 +154,7 @@ paymentService:
 productCatalogService:
   create: true
   name: productcatalogservice
+  tag: ""
   # Specifies an extra latency to any request on productcatalogservice, by default no extra latency.
   extraLatency: ""
   resources:
@@ -160,6 +168,7 @@ productCatalogService:
 recommendationService:
   create: true
   name: recommendationservice
+  tag: ""
   resources:
     requests:
       cpu: 100m
@@ -171,6 +180,7 @@ recommendationService:
 shippingService:
   create: true
   name: shippingservice
+  tag: ""
   resources:
     requests:
       cpu: 100m
