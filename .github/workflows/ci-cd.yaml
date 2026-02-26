@@ -197,6 +197,7 @@ jobs:
           NAMESPACE: ${{ needs.changes.outputs.namespace }}
         run: |
           aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+          helm rollback online-boutique -n $NAMESPACE 2>/dev/null || true
           helm upgrade --install online-boutique ./helm-chart \
             --namespace $NAMESPACE \
             --create-namespace \
