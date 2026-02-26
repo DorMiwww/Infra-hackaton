@@ -27,7 +27,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/online-boutique
 
 jobs:
   # ── Detect which services changed ──
@@ -99,6 +98,8 @@ jobs:
         id: ctx
         run: |
           SVC="${{ matrix.service }}"
+          IMAGE=$(echo "ghcr.io/${{ github.repository_owner }}/online-boutique/$SVC" | tr '[:upper:]' '[:lower:]')
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
           if [[ "$SVC" == "cartservice" ]]; then
             echo "context=code/cartservice/src" >> $GITHUB_OUTPUT
             echo "dockerfile=code/cartservice/src/Dockerfile" >> $GITHUB_OUTPUT
@@ -113,8 +114,8 @@ jobs:
           file: ${{ steps.ctx.outputs.dockerfile }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+            ${{ steps.ctx.outputs.image }}:${{ github.sha }}
+            ${{ steps.ctx.outputs.image }}:latest
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
 
@@ -134,7 +135,7 @@ jobs:
 
       - name: Update values.yaml
         run: |
-          REPO="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}"
+          REPO=$(echo "ghcr.io/${{ github.repository_owner }}/online-boutique" | tr '[:upper:]' '[:lower:]')
           TAG="${{ github.sha }}"
 
           yq -i ".images.repository = \"$REPO\"" helm-chart/values.yaml
