@@ -80,6 +80,22 @@ resource "helm_release" "kube_prometheus_stack" {
     value = "ReadWriteOnce"
   }
 
+  # --- Sidecar: підхоплює ConfigMap-дашборди з анотацією grafana_folder ---
+  set {
+    name  = "grafana.sidecar.dashboards.enabled"
+    value = "true"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.label"
+    value = "grafana_dashboard"
+  }
+
+  set {
+    name  = "grafana.sidecar.dashboards.folderAnnotation"
+    value = "grafana_folder"
+  }
+
   # --- AlertManager ---
   set {
     name  = "alertmanager.enabled"
@@ -98,4 +114,31 @@ resource "helm_release" "kube_prometheus_stack" {
   }
 
   depends_on = [module.eks, kubernetes_storage_class.gp3]
+}
+
+# ───────────────────────────────────────────
+# Grafana dashboards — provisioned via sidecar
+# Файли з grafana-dashboards/*.json → папка "int20h" в Grafana
+# ───────────────────────────────────────────
+
+resource "kubernetes_config_map" "grafana_dashboards" {
+  metadata {
+    name      = "grafana-dashboards-int20h"
+    namespace = kubernetes_namespace.monitoring.metadata[0].name
+
+    labels = {
+      grafana_dashboard = "1"
+    }
+
+    annotations = {
+      grafana_folder = var.grafana_dashboard_folder
+    }
+  }
+
+  data = {
+    for f in fileset("${path.module}/../grafana-dashboards", "*.json") :
+    f => file("${path.module}/../grafana-dashboards/${f}")
+  }
+
+  depends_on = [helm_release.kube_prometheus_stack]
 }

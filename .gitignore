@@ -12,6 +12,7 @@
 *.json
 !package.json
 !code/**/*.json
+!grafana-dashboards/*.json
 .env
 .env.*
 

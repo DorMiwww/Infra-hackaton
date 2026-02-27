@@ -133,6 +133,12 @@ variable "grafana_service_type" {
   default     = "LoadBalancer"
 }
 
+variable "grafana_dashboard_folder" {
+  description = "Grafana folder name for provisioned dashboards"
+  type        = string
+  default     = "int20h"
+}
+
 variable "prometheus_retention" {
   description = "How long Prometheus keeps metrics data"
   type        = string
