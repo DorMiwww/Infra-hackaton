@@ -153,12 +153,22 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update values.yaml
+      - name: Set values file
+        id: values
         run: |
+          if [[ "${{ needs.changes.outputs.namespace }}" == "production" ]]; then
+            echo "file=helm-chart/values.yaml" >> $GITHUB_OUTPUT
+          else
+            echo "file=helm-chart/values-stg.yaml" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update values file
+        run: |
+          VALUES_FILE="${{ steps.values.outputs.file }}"
           REPO=$(echo "ghcr.io/${{ github.repository_owner }}/online-boutique" | tr '[:upper:]' '[:lower:]')
           TAG="${{ github.sha }}"
 
-          yq -i ".images.repository = \"$REPO\"" helm-chart/values.yaml
+          yq -i ".images.repository = \"$REPO\"" "$VALUES_FILE"
 
           declare -A KEY_MAP=(
             [adservice]=adService
@@ -177,14 +187,14 @@ jobs:
           SERVICES='${{ needs.changes.outputs.services }}'
           for svc in $(echo "$SERVICES" | jq -r '.[]'); do
             key="${KEY_MAP[$svc]}"
-            [ -n "$key" ] && yq -i ".$key.tag = \"$TAG\"" helm-chart/values.yaml
+            [ -n "$key" ] && yq -i ".$key.tag = \"$TAG\"" "$VALUES_FILE"
           done
 
       - name: Commit updated values
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add helm-chart/values.yaml
+          git add ${{ steps.values.outputs.file }}
           git diff --cached --quiet || git commit -m "ci: update image tags [skip ci]"
           git pull --rebase
           git push
@@ -220,6 +230,7 @@ jobs:
           fi
 
           helm upgrade --install online-boutique ./helm-chart \
+            -f ${{ steps.values.outputs.file }} \
             --namespace $NAMESPACE \
             --create-namespace \
             --atomic \
