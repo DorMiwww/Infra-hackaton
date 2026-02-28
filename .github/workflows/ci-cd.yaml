@@ -208,10 +208,15 @@ jobs:
           if [[ "$LATEST_STATUS" == "pending-install" ]]; then
             echo "Stuck in pending-install – removing release"
             helm uninstall online-boutique -n $NAMESPACE --no-hooks 2>/dev/null || true
+            echo "Waiting for resources to be fully cleaned up..."
+            kubectl delete svc frontend-external -n $NAMESPACE --wait 2>/dev/null || true
+            kubectl wait --for=delete svc/frontend-external -n $NAMESPACE --timeout=60s 2>/dev/null || true
           elif [[ "$LATEST_STATUS" == "pending-upgrade" || "$LATEST_STATUS" == "pending-rollback" ]]; then
             echo "Stuck in $LATEST_STATUS – rolling back"
             helm rollback online-boutique -n $NAMESPACE 2>/dev/null || \
               helm uninstall online-boutique -n $NAMESPACE --no-hooks 2>/dev/null || true
+            echo "Waiting for resources to be fully cleaned up..."
+            kubectl wait --for=delete svc/frontend-external -n $NAMESPACE --timeout=60s 2>/dev/null || true
           fi
 
           helm upgrade --install online-boutique ./helm-chart \
