@@ -141,6 +141,9 @@ jobs:
     name: Deploy to ${{ needs.changes.outputs.namespace }}
     needs: [changes, build]
     if: needs.changes.outputs.services != '[]'
+    concurrency:
+      group: deploy-${{ needs.changes.outputs.namespace }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -197,10 +200,24 @@ jobs:
           NAMESPACE: ${{ needs.changes.outputs.namespace }}
         run: |
           aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
-          helm rollback online-boutique -n $NAMESPACE 2>/dev/null || true
+
+          # Clear any stuck pending Helm operations
+          LATEST_STATUS=$(helm status online-boutique -n $NAMESPACE -o json 2>/dev/null | jq -r '.info.status' || echo "not-found")
+          echo "Current release status: $LATEST_STATUS"
+
+          if [[ "$LATEST_STATUS" == "pending-install" ]]; then
+            echo "Stuck in pending-install – removing release"
+            helm uninstall online-boutique -n $NAMESPACE --no-hooks 2>/dev/null || true
+          elif [[ "$LATEST_STATUS" == "pending-upgrade" || "$LATEST_STATUS" == "pending-rollback" ]]; then
+            echo "Stuck in $LATEST_STATUS – rolling back"
+            helm rollback online-boutique -n $NAMESPACE 2>/dev/null || \
+              helm uninstall online-boutique -n $NAMESPACE --no-hooks 2>/dev/null || true
+          fi
+
           helm upgrade --install online-boutique ./helm-chart \
             --namespace $NAMESPACE \
             --create-namespace \
+            --atomic \
             --wait \
             --timeout 10m
 
